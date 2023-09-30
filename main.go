@@ -13,6 +13,8 @@ import (
 	"github.com/yusufpapurcu/wmi"
 	"os"
 	"os/exec"
+	"strconv"
+	"strings"
 	"time"
 )
 
@@ -56,23 +58,31 @@ func getCpuUsage() {
 }
 
 func parseBootTime(bootTimeStr string) (time.Time, error) {
-	// Check if the input string has the correct length
-	if len(bootTimeStr) != 23 {
-		return time.Time{}, fmt.Errorf("invalid boot time format")
+
+	parts := strings.Split(bootTimeStr, ".")
+
+	if len(parts) != 2 {
+		fmt.Println("Invalid input format")
+		return time.Time{}, nil
 	}
 
-	// Extract the time part
-	timeStr := bootTimeStr[8:14] // "HHmmss"
-	bootTime, err := time.Parse("150405", timeStr)
+	// Parse the numeric part as a float64.
+	numericPart, err := strconv.ParseFloat(parts[0]+"."+parts[1], 64)
 	if err != nil {
-		return time.Time{}, err
+		fmt.Println("Error parsing numeric part:", err)
+		return time.Time{}, nil
 	}
 
-	// Since we're only extracting the time, create a new time.Time object with today's date
-	now := time.Now()
-	bootTime = time.Date(now.Year(), now.Month(), now.Day(), bootTime.Hour(), bootTime.Minute(), bootTime.Second(), 0, now.Location())
+	// Calculate hours, minutes, and seconds.
+	hours := int(numericPart / 3600)
+	numericPart -= float64(hours) * 3600
+	minutes := int(numericPart / 60)
+	numericPart -= float64(minutes) * 60
+	seconds := int(numericPart)
 
-	return bootTime, nil
+	fmt.Printf("%d hours, %d minutes, %d seconds\n", hours, minutes, seconds)
+
+	return time.Time{}, nil
 }
 
 func main() {
@@ -107,8 +117,8 @@ func main() {
 			fmt.Printf("L3 Cache Size: %d KB\n", processor.L3CacheSize)
 			bootTime, err := parseBootTime(operatingSystem.LastBootUpTime)
 			if err == nil {
-				uptime := time.Since(bootTime)
-				fmt.Printf("Uptime: %s\n", uptime)
+				//uptime := time.Since(bootTime)
+				fmt.Printf("Uptime: %f:%f:%f\n", time.Since(bootTime).Hours(), time.Since(bootTime).Minutes(), time.Since(bootTime).Seconds())
 			} else {
 				fmt.Printf("Error parsing boot time: %v\n", err)
 			}
