@@ -10,10 +10,12 @@ package main
 import (
 	"fmt"
 	"github.com/shirou/gopsutil/cpu"
+	"github.com/shirou/gopsutil/disk"
+	"github.com/shirou/gopsutil/mem"
 	"github.com/yusufpapurcu/wmi"
+	"math"
 	"os"
 	"os/exec"
-	"strconv"
 	"strings"
 	"time"
 )
@@ -45,8 +47,8 @@ func getCpuUsage() {
 		fmt.Printf("Error getting CPU info: %v\n", err)
 		return
 	}
-
-	percent, err := cpu.Percent(1000000000, false)
+	//                          WWWWWW 100000000
+	percent, err := cpu.Percent(200000000, false)
 	if err != nil {
 		fmt.Printf("Error getting CPU usage: %v\n", err)
 		return
@@ -55,6 +57,16 @@ func getCpuUsage() {
 	for i, pct := range percent {
 		fmt.Printf("CPU%d: %.2f%%\n", i, pct)
 	}
+}
+
+func roundToDecimalPlaces(num float64, decimalPlaces int) float64 {
+	// Calculate the factor for rounding
+	roundingFactor := math.Pow(10, float64(decimalPlaces))
+
+	// Round the number to the specified decimal places
+	rounded := math.Round(num*roundingFactor) / roundingFactor
+
+	return rounded
 }
 
 func parseBootTime(bootTimeStr string) (time.Time, error) {
@@ -66,23 +78,13 @@ func parseBootTime(bootTimeStr string) (time.Time, error) {
 		return time.Time{}, nil
 	}
 
-	// Parse the numeric part as a float64.
-	numericPart, err := strconv.ParseFloat(parts[0]+"."+parts[1], 64)
+	t, err := time.Parse("20060102150405", parts[0])
 	if err != nil {
-		fmt.Println("Error parsing numeric part:", err)
-		return time.Time{}, nil
+		fmt.Println("Error parsing time:", err)
+		return time.Time{}, err
 	}
 
-	// Calculate hours, minutes, and seconds.
-	hours := int(numericPart / 3600)
-	numericPart -= float64(hours) * 3600
-	minutes := int(numericPart / 60)
-	numericPart -= float64(minutes) * 60
-	seconds := int(numericPart)
-
-	fmt.Printf("%d hours, %d minutes, %d seconds\n", hours, minutes, seconds)
-
-	return time.Time{}, nil
+	return t, nil
 }
 
 func main() {
@@ -107,22 +109,63 @@ func main() {
 
 			clearScreen()
 
+			fmt.Printf("===CPU===\n")
 			fmt.Printf("CPU Name: %s\n", processor.Name)
 			fmt.Printf("CPU Manufacturer: %s\n", processor.Manufacturer)
-			fmt.Printf("Max Clock Speed: %d MHz\n", processor.MaxClockSpeed)
-			fmt.Printf("Current Clock Speed: %d MHz\n", processor.CurrentClockSpeed)
+			fmt.Printf("Base Clock Speed: %.2f GHz\n", roundToDecimalPlaces(float64(processor.CurrentClockSpeed)/1000.0, 2))
 			fmt.Printf("Number of Cores: %d\n", processor.NumberOfCores)
 			fmt.Printf("Number of Logical Processors: %d\n", processor.NumberOfLogicalProcessors)
 			fmt.Printf("L2 Cache Size: %d KB\n", processor.L2CacheSize)
 			fmt.Printf("L3 Cache Size: %d KB\n", processor.L3CacheSize)
 			bootTime, err := parseBootTime(operatingSystem.LastBootUpTime)
 			if err == nil {
-				//uptime := time.Since(bootTime)
-				fmt.Printf("Uptime: %f:%f:%f\n", time.Since(bootTime).Hours(), time.Since(bootTime).Minutes(), time.Since(bootTime).Seconds())
+				uptime := time.Since(bootTime)
+				parts := strings.Split(uptime.String(), ".")
+				fmt.Printf("Uptime: %s\n", parts[0]+"s")
 			} else {
 				fmt.Printf("Error parsing boot time: %v\n", err)
 			}
 			getCpuUsage()
+
+			// Memory
+			fmt.Printf("\n===Memory===\n")
+			memoryInfo, err := mem.VirtualMemory()
+			if err != nil {
+				fmt.Printf("Error getting memory info: %v\n", err)
+				return
+			}
+
+			fmt.Printf("Total Memory: %.2f GB\n", float64(memoryInfo.Total)/float64(1024*1024*1024))
+			fmt.Printf("Used Memory: %.2f GB\n", float64(memoryInfo.Used)/float64(1024*1024*1024))
+			fmt.Printf("Free Memory: %.2f GB\n", float64(memoryInfo.Free)/float64(1024*1024*1024))
+			fmt.Printf("Memory Usage: %.2f%%\n", memoryInfo.UsedPercent)
+
+			// Disk
+			fmt.Printf("\n===Disk===\n")
+			partitions, err := disk.Partitions(false)
+			if err != nil {
+				fmt.Println("Error:", err)
+				return
+			}
+
+			for _, partition := range partitions {
+				fmt.Printf("Device: %s\n", partition.Device)
+				fmt.Printf("Mount point: %s\n", partition.Mountpoint)
+				fmt.Printf("File system type: %s\n", partition.Fstype)
+
+				// Get disk usage statistics
+				usage, err := disk.Usage(partition.Mountpoint)
+				if err != nil {
+					fmt.Println("Error:", err)
+					continue
+				}
+
+				fmt.Printf("Total capacity: %.2f GB\n", float64(usage.Total)/(1024*1024*1024))
+				fmt.Printf("Used space: %.2f GB\n", float64(usage.Used)/(1024*1024*1024))
+				fmt.Printf("Free space: %.2f GB\n", float64(usage.Free)/(1024*1024*1024))
+				fmt.Printf("Usage percentage: %.2f%%\n", usage.UsedPercent)
+			}
+
 		} else {
 			fmt.Println("No CPU information found.")
 		}
